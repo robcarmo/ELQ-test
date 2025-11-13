@@ -1,0 +1,22 @@
+variable "repository_name" {
+  description = "Name of the ECR repository"
+  type        = string
+}
+
+variable "scan_on_push" {
+  description = "Enable image scanning on push"
+  type        = bool
+  default     = true
+}
+
+variable "force_delete" {
+  description = "Force delete repository even if it contains images"
+  type        = bool
+  default     = false
+}
+
+variable "tags" {
+  description = "Tags to apply to resources"
+  type        = map(string)
+  default     = {}
+}

@@ -1,0 +1,20 @@
+aws_region         = "us-east-1"
+environment        = "dev"
+project_name       = "eloquent-ai"
+vpc_cidr           = "10.0.0.0/16"
+num_azs            = 2
+
+ecr_repository_name = "eloquent-ai-app"
+ecs_cluster_name    = "eloquent-ai-cluster"
+ecs_service_name    = "eloquent-ai-service"
+container_name      = "eloquent-ai-app"
+
+task_cpu    = "256"
+task_memory = "512"
+
+desired_count = 2
+min_capacity  = 1
+max_capacity  = 4
+
+app_version        = "1.0.0"
+log_retention_days = 7
