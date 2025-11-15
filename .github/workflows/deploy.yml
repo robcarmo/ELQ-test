@@ -1,13 +1,12 @@
 name: Deploy Application
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'app/**'
-      - '.github/workflows/deploy.yml'
   workflow_dispatch:
+    inputs:
+      image_uri:
+        description: 'Full image URI to deploy (e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/eloquent-ai-app:TAG)'
+        required: true
+        type: string
 
 env:
   AWS_REGION: us-east-1
@@ -18,35 +17,13 @@ env:
 
 jobs:
   deploy:
-    name: Build and Deploy
+    name: Deploy
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install flake8 pytest
-
-      - name: Install app dependencies
-        run: |
-          pip install -r app/requirements.txt
-
-      - name: Lint with flake8
-        run: |
-          flake8 app/app.py --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 app/app.py --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-
-      - name: Run unit tests
-        run: |
-          pytest -xvs app/test_app.py
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -55,22 +32,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build and push Docker image
-        if: github.event_name == 'workflow_dispatch'
-        id: build-image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          docker buildx build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f app/Dockerfile app/
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Get current task definition
         id: get-task-def
@@ -86,10 +47,9 @@ jobs:
         with:
           task-definition: task-definition.json
           container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ steps.build-image.outputs.image }}
+          image: ${{ github.event.inputs.image_uri }}
 
-      - name: Deploy to ECS (manual)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Deploy to ECS
         id: deploy
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:

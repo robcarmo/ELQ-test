@@ -55,7 +55,7 @@ variable "container_name" {
 variable "container_image" {
   description = "Docker image to run (will be overridden by CI/CD)"
   type        = string
-  default     = "149399235178.dkr.ecr.us-east-1.amazonaws.com/eloquent-ai-app:latest"
+  default     = "123456789012.dkr.ecr.us-east-1.amazonaws.com/eloquent-ai-app:latest"
 }
 
 variable "container_port" {

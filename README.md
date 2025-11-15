@@ -93,7 +93,7 @@ Add these secrets:
 
 | Secret Name | Description | Example |
 |-------------|-------------|---------|
-| `AWS_ACCESS_KEY_ID` | AWS access key | `AKIAIOSFODNN7EXAMPLE` |
+| `AWS_ACCESS_KEY_ID` | AWS access key | `AKIAXXXXXXXXXXXXXXXX` |
 | `AWS_SECRET_ACCESS_KEY` | AWS secret key | `wJalrXUtnFEMI/K7MDENG/...` |
 | `TF_STATE_BUCKET` | S3 bucket from Step 1 (optional for testing) | `eloquent-ai-terraform-state-1234567890` |
 
@@ -193,7 +193,7 @@ terraform output alb_dns_name
 #### Test Endpoints
 
 ```bash
-ALB_URL="http://your-alb-dns-name"
+ALB_URL="http://your-alb-url.amazonaws.com"
 
 # Health check
 curl $ALB_URL/health
@@ -253,7 +253,7 @@ The deployment pipeline consists of three GitHub Actions workflows:
 #### 3. Deploy Workflow (`deploy.yml`)
 
 **Trigger**:
-- `workflow_dispatch` (manual) with input `image_uri` (e.g. `149399235178.dkr.ecr.us-east-1.amazonaws.com/eloquent-ai-app:TAG`)
+- `workflow_dispatch` (manual) with input `image_uri` (e.g. `123456789012.dkr.ecr.us-east-1.amazonaws.com/eloquent-ai-app:TAG`)
 
 **Steps**:
 1. **Checkout**: Clone repository
@@ -555,13 +555,15 @@ Key metrics to monitor:
 
 ---
 
-## Local Testing
+## Testing
+
+### Local Container Testing
 
 Test the application locally before deploying:
 
 ```bash
 # Build Docker image
-docker build -t eloquent-ai-app .
+docker build -t eloquent-ai-app -f app/Dockerfile app/
 
 # Run container
 docker run -p 8080:8080 \
@@ -573,6 +575,50 @@ docker run -p 8080:8080 \
 curl http://localhost:8080/health
 curl http://localhost:8080/api/hello
 ```
+
+### Automated Testing with test-script.sh
+
+The project includes a convenient testing script that checks your deployed application:
+
+```bash
+# Make the script executable
+chmod +x test-script.sh
+
+# Run the script - it will ask for your ALB URL
+./test-script.sh
+```
+
+The script will:
+1. Ask for your ALB URL
+2. Test the `/health` endpoint
+3. Test the `/api/hello` endpoint
+4. Display formatted JSON responses
+5. Provide a clear pass/fail status for each test
+
+Sample output:
+```
+===== Testing Deployed ALB at http://your-alb-url... =====
+
+Testing /health endpoint...
+✅ Health check successful
+Response:
+{
+    "status": "healthy",
+    "version": "1.0.0"
+}
+
+Testing /api/hello endpoint...
+✅ Hello endpoint successful
+Response:
+{
+    "message": "Hello from Eloquent AI!",
+    "environment": "dev"
+}
+
+✅ All tests passed for Deployed ALB!
+```
+
+This is particularly useful for validating your deployment after CI/CD pipeline runs.
 
 ---
 
