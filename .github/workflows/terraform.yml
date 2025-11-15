@@ -17,6 +17,7 @@ on:
 env:
   AWS_REGION: us-east-1
   TF_VERSION: 1.6.0
+  TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET || '' }}
 
 jobs:
   terraform:
@@ -43,7 +44,17 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Terraform Init
-        run: terraform init
+        run: |
+          if [ -n "${TF_STATE_BUCKET}" ]; then
+            echo "Using remote S3 backend: ${TF_STATE_BUCKET}"
+            terraform init \
+              -backend-config="bucket=${TF_STATE_BUCKET}" \
+              -backend-config="key=eloquent-ai/terraform.tfstate" \
+              -backend-config="region=${AWS_REGION}"
+          else
+            echo "No TF_STATE_BUCKET configured, using local state backend"
+            terraform init
+          fi
 
       - name: Terraform Format
         run: terraform fmt -check
@@ -57,6 +68,6 @@ jobs:
         run: terraform plan -no-color
         continue-on-error: true
 
-      - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      - name: Terraform Apply (manual)
+        if: github.event_name == 'workflow_dispatch'
         run: terraform apply -auto-approve

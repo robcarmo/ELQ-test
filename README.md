@@ -61,14 +61,29 @@ Before deploying, ensure you have:
 
 ### Option 1: Automated Deployment (Recommended)
 
-#### Step 1: AWS Setup
+#### Step 1: Choose a State Management Approach
 
+You have two options for Terraform state management:
+
+**A. Remote State (Production Ready):**
 Create S3 bucket for Terraform state:
 ```bash
 aws s3 mb s3://eloquent-ai-terraform-state-$(date +%s) --region us-east-1
 ```
-
 Save the bucket name for the next step.
+
+**B. Local State (Testing/Development):**
+For testing or development, you can use local state management by commenting out the S3 backend configuration in `terraform/versions.tf`:
+
+```hcl
+# Comment out for local state management during testing
+# backend "s3" {
+#   bucket = "your-bucket-name-here"
+#   key    = "eloquent-ai/terraform.tfstate"
+#   region = "us-east-1"
+#   encrypt = true
+# }
+```
 
 #### Step 2: Configure GitHub Secrets
 
@@ -80,11 +95,11 @@ Add these secrets:
 |-------------|-------------|---------|
 | `AWS_ACCESS_KEY_ID` | AWS access key | `AKIAIOSFODNN7EXAMPLE` |
 | `AWS_SECRET_ACCESS_KEY` | AWS secret key | `wJalrXUtnFEMI/K7MDENG/...` |
-| `TF_STATE_BUCKET` | S3 bucket from Step 1 | `eloquent-ai-terraform-state-1234567890` |
+| `TF_STATE_BUCKET` | S3 bucket from Step 1 (optional for testing) | `eloquent-ai-terraform-state-1234567890` |
 
-#### Step 3: Update Terraform Backend
+#### Step 3: Update Terraform Backend (For Remote State)
 
-Edit `terraform/versions.tf` and update the S3 bucket name:
+If using remote state, edit `terraform/versions.tf` and update the S3 bucket name:
 
 ```hcl
 backend "s3" {
@@ -94,6 +109,8 @@ backend "s3" {
   encrypt = true
 }
 ```
+
+If using local state for testing, you can skip this step.
 
 #### Step 4: Deploy
 
@@ -586,12 +603,14 @@ terraform destroy
 
 ```
 .
-├── app.py                      # FastAPI application
-├── Dockerfile                  # Container definition
-├── requirements.txt            # Python dependencies
+├── app/                        # Application directory
+│   ├── app.py                 # FastAPI application
+│   ├── test_app.py            # Unit tests for the application
+│   ├── Dockerfile             # Container definition
+│   ├── requirements.txt       # Python dependencies
+│   └── .dockerignore          # Docker ignore rules
 ├── README.md                   # This file
 ├── .gitignore                  # Git ignore rules
-├── .dockerignore               # Docker ignore rules
 ├── .github/workflows/
 │   ├── terraform.yml          # Infrastructure CI/CD
 │   └── deploy.yml             # Application CI/CD
