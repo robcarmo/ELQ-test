@@ -76,7 +76,7 @@ jobs:
         id: get-task-def
         run: |
           aws ecs describe-task-definition \
-            --task-definition eloquent-ai-task \
+            --task-definition eloquent-ai-service \
             --query 'taskDefinition' \
             --output json > task-definition.json
 
