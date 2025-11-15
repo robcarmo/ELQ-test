@@ -1,0 +1,120 @@
+name: Build, Test, Push, and Deploy
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - '.github/workflows/build-and-push.yml'
+
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - '.github/workflows/build-and-push.yml'
+
+  workflow_dispatch: {}
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: eloquent-ai-app
+  ECS_CLUSTER: eloquent-ai-cluster
+  ECS_SERVICE: eloquent-ai-service
+  CONTAINER_NAME: eloquent-ai-app
+
+jobs:
+  build-test-push-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tooling and app dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install flake8 pytest
+          python -m pip install -r app/requirements.txt
+
+      - name: Lint with flake8
+        run: |
+          flake8 app/app.py --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 app/app.py --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Run unit tests
+        run: |
+          pytest -xvs app/test_app.py
+
+      # Only push & deploy when it's push to main or manual run, not PR
+      - name: Configure AWS credentials
+        if: github.event_name != 'pull_request'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: github.event_name != 'pull_request'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        if: github.event_name != 'pull_request'
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker buildx build --platform linux/amd64 \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -f app/Dockerfile app/
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Get current task definition
+        if: github.event_name != 'pull_request'
+        id: get-task-def
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition eloquent-ai-task \
+            --query 'taskDefinition' \
+            --output json > task-definition.json
+
+      - name: Update ECS task definition
+        if: github.event_name != 'pull_request'
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ env.IMAGE_URI }}
+
+      - name: Deploy to ECS
+        if: github.event_name != 'pull_request'
+        id: deploy
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      - name: Rollback on failure
+        if: failure() && github.event_name != 'pull_request'
+        run: |
+          echo "Deployment failed, triggering rollback..."
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --force-new-deployment

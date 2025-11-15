@@ -210,43 +210,64 @@ curl $ALB_URL/api/hello
 
 ### Workflows
 
-The deployment pipeline consists of two GitHub Actions workflows:
+The deployment pipeline consists of three GitHub Actions workflows:
 
 #### 1. Terraform Workflow (`terraform.yml`)
 
-**Trigger**: Push or PR to `main` branch when Terraform files change
+**Triggers**:
+- `pull_request` on `main` when `terraform/**` changes → runs fmt/validate/plan only
+- `workflow_dispatch` (manual) with input `action = apply | destroy` → runs `terraform apply` or `terraform destroy`
 
 **Steps**:
 1. **Checkout**: Clone repository
 2. **Setup Terraform**: Install Terraform 1.6.0
 3. **Configure AWS**: Set up AWS credentials
-4. **Init**: Initialize Terraform with S3 backend
+4. **Init**: Initialize Terraform backend (S3 or local state)
 5. **Format**: Check code formatting (`terraform fmt`)
 6. **Validate**: Validate Terraform syntax
-7. **Plan**: Generate execution plan
-8. **Apply**: Deploy infrastructure (only on push to main)
+7. **Plan**: Generate execution plan (on PR)
+8. **Apply/Destroy**: Apply or destroy infrastructure **only when manually triggered** via `workflow_dispatch`
 
-#### 2. Deploy Workflow (`deploy.yml`)
+#### 2. Build, Test, Push, and Deploy Workflow (`build-and-push.yml`)
 
-**Trigger**: Push to `main` branch when application files change
+**Triggers**:
+- `pull_request` on `main` when `app/**` changes → runs linting and unit tests only
+- `push` to `main` when `app/**` changes → runs linting, unit tests, builds image, pushes to ECR, and deploys to ECS
+- `workflow_dispatch` (manual) → same behavior as push to `main` (end-to-end pipeline)
 
 **Steps**:
 1. **Checkout**: Clone repository
 2. **Setup Python**: Install Python 3.11
-3. **Lint**: Run flake8 to check code quality
-4. **Configure AWS**: Set up AWS credentials
-5. **Login to ECR**: Authenticate with container registry
-6. **Build**: Create Docker image
-7. **Push**: Upload image to ECR with git SHA tag
-8. **Get Task Definition**: Fetch current ECS task definition
-9. **Update Task Definition**: Update with new image
-10. **Deploy**: Deploy to ECS with rolling update
-11. **Rollback**: Automatically rollback on failure
+3. **Install tooling**: Install `flake8` and `pytest`
+4. **Install app dependencies**: Install from `app/requirements.txt`
+5. **Lint**: Run flake8 on `app/app.py`
+6. **Unit tests**: Run pytest against `app/test_app.py`
+7. **Configure AWS**: Set up AWS credentials (non-PR runs)
+8. **Login to ECR**: Authenticate with container registry (non-PR runs)
+9. **Build**: Create Docker image using `app/Dockerfile` with Docker buildx (non-PR runs)
+10. **Push**: Upload image to ECR with git SHA tag and `latest` tag (non-PR runs)
+11. **Update Task Definition**: Render ECS task definition with new image (non-PR runs)
+12. **Deploy**: Deploy to ECS with rolling update (non-PR runs)
+13. **Rollback**: Automatically rollback on failure (non-PR runs)
+
+#### 3. Deploy Workflow (`deploy.yml`)
+
+**Trigger**:
+- `workflow_dispatch` (manual) with input `image_uri` (e.g. `149399235178.dkr.ecr.us-east-1.amazonaws.com/eloquent-ai-app:TAG`)
+
+**Steps**:
+1. **Checkout**: Clone repository
+2. **Configure AWS**: Set up AWS credentials
+3. **Get Task Definition**: Fetch current ECS task definition
+4. **Update Task Definition**: Replace container image with the provided `image_uri`
+5. **Deploy**: Deploy updated task definition to ECS with rolling update
+6. **Rollback**: Automatically rollback on failure
 
 ### Deployment Strategy
 
 - **Rolling Updates**: New tasks are started before old tasks are stopped
 - **Health Checks**: ALB ensures new tasks are healthy before routing traffic
+- **Circuit Breaker**: Automatically rolls back on failure
 - **Circuit Breaker**: Automatically rolls back if deployment fails
 - **Zero Downtime**: Traffic continues to flow during deployments
 
